@@ -6,25 +6,26 @@ import { getAppConfig } from './config';
 /**
  * Creates and returns a Google OAuth2 Client configured with env credentials.
  */
-export function getOAuthClient(): any {
+export function getOAuthClient(redirectUri?: string): any {
   const config = getAppConfig();
   const clientId = config.googleClientId;
   const clientSecret = config.googleClientSecret;
-  const redirectUri = config.googleRedirectUri;
+  const resolvedRedirectUri = redirectUri || config.googleRedirectUri || 'http://localhost:3000/api/oauth/callback';
 
-  if (!clientId || !clientSecret || !redirectUri) {
-    throw new Error('Google OAuth credentials (ID, Secret, Redirect URI) are missing.');
+  if (!clientId || !clientSecret) {
+    throw new Error('Google OAuth credentials (Client ID and Secret) are missing.');
   }
 
-  return new google.auth.OAuth2(clientId, clientSecret, redirectUri) as any;
+  return new google.auth.OAuth2(clientId, clientSecret, resolvedRedirectUri) as any;
 }
 
 /**
  * Generates the Google OAuth authorization URL.
  * Requests offline access and forces consent prompt to ensure we get a refresh token.
  */
-export function getAuthUrl(userId: string): string {
-  const client = getOAuthClient();
+export function getAuthUrl(userId: string, baseUrl?: string): string {
+  const redirectUri = baseUrl ? `${baseUrl}/api/oauth/callback` : undefined;
+  const client = getOAuthClient(redirectUri);
   return client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
@@ -40,8 +41,9 @@ export function getAuthUrl(userId: string): string {
 /**
  * Exchanges OAuth authorization code for tokens.
  */
-export async function getTokensFromCode(code: string) {
-  const client = getOAuthClient();
+export async function getTokensFromCode(code: string, baseUrl?: string) {
+  const redirectUri = baseUrl ? `${baseUrl}/api/oauth/callback` : undefined;
+  const client = getOAuthClient(redirectUri);
   const { tokens } = await client.getToken(code);
   return tokens;
 }

@@ -17,7 +17,8 @@ export async function GET(request: Request) {
     }
 
     // 1. Exchange authorization code for tokens
-    const tokens = await getTokensFromCode(code);
+    const baseUrl = new URL(request.url).origin;
+    const tokens = await getTokensFromCode(code, baseUrl);
     const { access_token, refresh_token, expiry_date } = tokens;
 
     if (!access_token) {

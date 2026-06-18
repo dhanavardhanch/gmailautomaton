@@ -3,7 +3,7 @@ import { getAuthUrl } from '@/lib/gmail';
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
+    const { searchParams, origin } = new URL(request.url);
     const userId = searchParams.get('userId');
 
     if (!userId) {
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const authUrl = getAuthUrl(userId);
+    const authUrl = getAuthUrl(userId, origin);
     return NextResponse.json({ url: authUrl });
   } catch (error: any) {
     console.error('Error in GET /api/oauth/url:', error);
