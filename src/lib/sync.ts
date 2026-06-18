@@ -34,7 +34,7 @@ export function chunkText(text: string, chunkSize = 1000, overlap = 200): string
 /**
  * Primary synchronization worker. Connects to Gmail and syncs user inbox to Supabase.
  */
-export async function syncUserInbox(userId: string, maxThreads = 30): Promise<{ success: boolean; count: number; error?: string }> {
+export async function syncUserInbox(userId: string, maxThreads = 10): Promise<{ success: boolean; count: number; error?: string }> {
   try {
     // 1. Retrieve user credentials
     const { data: creds, error: credsError } = await supabaseAdmin
@@ -80,8 +80,14 @@ export async function syncUserInbox(userId: string, maxThreads = 30): Promise<{ 
 
     // 3. Retrieve Gmail Threads list
     console.log(`Sync started: Fetching threads for user ${creds.email}...`);
-    // Query parameters: Only sync INBOX emails for sync efficiency, and skip drafts/junk
-    const qStr = 'label:INBOX';
+
+    // Only fetch emails received AFTER the user first connected their Gmail account.
+    // Format: after:YYYY/MM/DD (Gmail query syntax)
+    const connectedAt = new Date(creds.created_at);
+    const afterDate = `${connectedAt.getFullYear()}/${String(connectedAt.getMonth() + 1).padStart(2, '0')}/${String(connectedAt.getDate()).padStart(2, '0')}`;
+    const qStr = `label:INBOX after:${afterDate}`;
+    console.log(`Fetching emails after: ${afterDate} (account connected date)`);
+
     const threadsResponse = await listGmailThreads(authClient, { maxResults: maxThreads, q: qStr });
     
     const threadsList = threadsResponse.threads || [];
