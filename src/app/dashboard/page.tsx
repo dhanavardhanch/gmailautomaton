@@ -254,7 +254,7 @@ export default function DashboardPage() {
       const res = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: DEFAULT_USER_ID, maxThreads: 30 }),
+        body: JSON.stringify({ userId: DEFAULT_USER_ID, maxThreads: 10 }),
       });
       const data = await res.json();
       
