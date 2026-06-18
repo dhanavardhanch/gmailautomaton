@@ -4,6 +4,7 @@ import { getOAuthClient, getTokensFromCode } from '@/lib/gmail';
 import { supabaseAdmin } from '@/lib/supabase';
 
 export async function GET(request: Request) {
+  const baseUrl = new URL(request.url).origin;
   try {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
@@ -17,7 +18,6 @@ export async function GET(request: Request) {
     }
 
     // 1. Exchange authorization code for tokens
-    const baseUrl = new URL(request.url).origin;
     const tokens = await getTokensFromCode(code, baseUrl);
     const { access_token, refresh_token, expiry_date } = tokens;
 
@@ -70,11 +70,9 @@ export async function GET(request: Request) {
     }
 
     // 4. Redirect user back to the front-end dashboard
-    const baseUrl = new URL(request.url).origin;
     return NextResponse.redirect(`${baseUrl}/dashboard?sync=trigger`);
   } catch (error: any) {
     console.error('Error in OAuth callback:', error);
-    const baseUrl = new URL(request.url).origin;
     return NextResponse.redirect(`${baseUrl}/?error=${encodeURIComponent(error.message || String(error))}`);
   }
 }
