@@ -1094,8 +1094,25 @@ export default function DashboardPage() {
           ))}
           {chatLoading && (
             <div style={{ ...styles.chatBubbleContainer, justifyContent: 'flex-start' }}>
-              <div style={{ ...styles.chatBubble, backgroundColor: 'transparent', border: 'none' }}>
-                <div style={styles.miniSpinner}></div>
+              <div 
+                style={{ 
+                  ...styles.chatBubble, 
+                  backgroundColor: 'rgba(79, 70, 229, 0.04)', 
+                  border: '1px solid rgba(79, 70, 229, 0.1)',
+                  color: '#4f46e5',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 14px',
+                  borderRadius: '12px',
+                }}
+              >
+                <div className="typing-dots">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+                <span style={{ fontSize: '0.8rem', fontWeight: 500 }}>Aether is analyzing...</span>
               </div>
             </div>
           )}

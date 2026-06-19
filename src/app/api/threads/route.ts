@@ -47,31 +47,48 @@ export async function GET(request: Request) {
     }
 
     // 2. Thread List View: List all threads for a user
-    // We construct a query to retrieve distinct threads that have emails matching the category filter (if any)
-    let query = supabaseAdmin
-      .from('email_threads')
-      .select(`
-        id,
-        subject,
-        summary,
-        last_message_at,
-        created_at,
-        emails!inner (
-          category
-        )
-      `)
-      .eq('user_id', userId);
-
+    let rawThreads: any[] = [];
     if (category && category !== 'All') {
-      // Filter threads where at least one email belongs to this category
-      query = query.eq('emails.category', category);
-    }
+      // Step A: Get all thread IDs of emails belonging to this category
+      const { data: catEmails, error: catError } = await supabaseAdmin
+        .from('emails')
+        .select('thread_id')
+        .eq('user_id', userId)
+        .eq('category', category);
 
-    const { data: rawThreads, error: threadsError } = await query.order('last_message_at', { ascending: false });
+      if (catError) {
+        console.error('Error filtering emails by category:', catError);
+      }
 
-    if (threadsError) {
-      console.error('Database error listing threads:', threadsError);
-      return NextResponse.json({ error: threadsError.message }, { status: 500 });
+      const threadIds = Array.from(new Set(catEmails?.map((e: any) => e.thread_id).filter(Boolean) || []));
+
+      if (threadIds.length > 0) {
+        const { data: threadsResult, error: threadsError } = await supabaseAdmin
+          .from('email_threads')
+          .select('id, subject, summary, last_message_at, created_at')
+          .eq('user_id', userId)
+          .in('id', threadIds)
+          .order('last_message_at', { ascending: false });
+
+        if (threadsError) {
+          console.error('Database error listing threads:', threadsError);
+          return NextResponse.json({ error: threadsError.message }, { status: 500 });
+        }
+        rawThreads = threadsResult || [];
+      }
+    } else {
+      // Step B: Fetch all threads for the user
+      const { data: threadsResult, error: threadsError } = await supabaseAdmin
+        .from('email_threads')
+        .select('id, subject, summary, last_message_at, created_at')
+        .eq('user_id', userId)
+        .order('last_message_at', { ascending: false });
+
+      if (threadsError) {
+        console.error('Database error listing threads:', threadsError);
+        return NextResponse.json({ error: threadsError.message }, { status: 500 });
+      }
+      rawThreads = threadsResult || [];
     }
 
     // Post-process threads to determine a representative category for each thread

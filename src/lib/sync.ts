@@ -251,16 +251,23 @@ export async function syncUserInbox(userId: string, maxThreads = 10): Promise<{
         const aiItem = newMessageIdsForAI.find(item => item.messageId === email.id);
         if (aiItem) {
           enrichPromises.push((async () => {
+            let emailSummary = 'Syncing summary...';
+            let category = 'Uncategorized';
+            
             try {
-              const [emailSummary, category] = await Promise.all([
-                generateEmailSummary(aiItem.subject, aiItem.fromHeader, aiItem.bodyText),
-                categorizeEmail(aiItem.subject, aiItem.fromHeader, aiItem.bodyText),
-              ]);
-              email.summary = emailSummary;
-              email.category = category;
-            } catch (err) {
-              console.error(`Phase 1: Sync AI enrichment failed for message ${email.id}:`, err);
+              emailSummary = await generateEmailSummary(aiItem.subject, aiItem.fromHeader, aiItem.bodyText);
+            } catch (summaryErr) {
+              console.error(`Phase 1: Sync AI summary failed for message ${email.id}:`, summaryErr);
             }
+
+            try {
+              category = await categorizeEmail(aiItem.subject, aiItem.fromHeader, aiItem.bodyText);
+            } catch (categoryErr) {
+              console.error(`Phase 1: Sync AI categorization failed for message ${email.id}:`, categoryErr);
+            }
+
+            email.summary = emailSummary;
+            email.category = category;
           })());
         }
       }
@@ -398,11 +405,20 @@ export async function enrichEmails(userId: string, newMessageIdsForAI: Array<{
 
     for (const item of newMessageIdsForAI) {
       try {
-        // Run AI summary + categorization in parallel
-        const [emailSummary, category] = await Promise.all([
-          generateEmailSummary(item.subject, item.fromHeader, item.bodyText),
-          categorizeEmail(item.subject, item.fromHeader, item.bodyText),
-        ]);
+        let emailSummary = 'Syncing summary...';
+        let category = 'Uncategorized';
+
+        try {
+          emailSummary = await generateEmailSummary(item.subject, item.fromHeader, item.bodyText);
+        } catch (summaryErr) {
+          console.error(`Phase 2: Background AI summary failed for message ${item.messageId}:`, summaryErr);
+        }
+
+        try {
+          category = await categorizeEmail(item.subject, item.fromHeader, item.bodyText);
+        } catch (categoryErr) {
+          console.error(`Phase 2: Background AI categorization failed for message ${item.messageId}:`, categoryErr);
+        }
 
         // Update email record with AI results
         await supabaseAdmin
