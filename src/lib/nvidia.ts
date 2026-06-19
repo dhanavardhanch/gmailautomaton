@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { getAppConfig } from './config';
-import { cleanText } from './mistral';
+import { cleanText, nimRetry } from './mistral';
 
 const getNvidiaClient = () => {
   const config = getAppConfig();
@@ -56,15 +56,20 @@ Email Content Snippet: ${snippet}
 Category:`;
 
   try {
-    const response = await client.chat.completions.create({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent },
-      ],
-      temperature: 0.1,
-      max_tokens: 20,
-    });
+    const response = await nimRetry(() =>
+      client.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+        temperature: 0.1,
+        max_tokens: 20,
+      }),
+      5,
+      2000,
+      true // background request
+    );
 
     const category = response.choices[0]?.message?.content?.trim() || 'Work / Professional';
     
@@ -160,15 +165,20 @@ Example output structure:
   );
 
   try {
-    const response = await client.chat.completions.create({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent },
-      ],
-      temperature: 0.2,
-      max_tokens: 2000,
-    });
+    const response = await nimRetry(() =>
+      client.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+        temperature: 0.2,
+        max_tokens: 2000,
+      }),
+      5,
+      2000,
+      false // user-interactive request
+    );
 
     const rawJson = response.choices[0]?.message?.content?.trim() || '[]';
     

@@ -219,9 +219,9 @@ export async function generateEmbedding(
   inputType: 'query' | 'passage' = 'passage',
   isBackground = false
 ): Promise<number[]> {
-  try {
+  const runEmbeddingCall = async (inputText: string) => {
     const client = getNvidiaClient();
-    const cleaned = cleanText(text, 1000);
+    const cleaned = cleanText(inputText, 800);
     if (!cleaned) {
       return new Array(768).fill(0);
     }
@@ -248,11 +248,32 @@ export async function generateEmbedding(
       const paddedVector = [...fullVector, ...new Array(768 - fullVector.length).fill(0)];
       return l2Normalize(paddedVector);
     }
-    
     throw new Error('Invalid embedding response format');
+  };
+
+  try {
+    return await runEmbeddingCall(text);
   } catch (error: any) {
+    const errMsg = String(error.message || error).toLowerCase();
+    const isTokenLimitError =
+      errMsg.includes('exceeds maximum') ||
+      errMsg.includes('token size') ||
+      errMsg.includes('too long') ||
+      error.status === 400;
+
+    if (isTokenLimitError) {
+      console.warn('Embedding input exceeded token limits. Retrying with half-sized text...');
+      try {
+        const shorterText = text.slice(0, Math.floor(text.length / 2));
+        return await runEmbeddingCall(shorterText);
+      } catch (retryError) {
+        console.error('Retry embedding failed:', retryError);
+        return new Array(768).fill(0);
+      }
+    }
+
     console.error('Error in generateEmbedding:', error);
-    throw error;
+    return new Array(768).fill(0);
   }
 }
 

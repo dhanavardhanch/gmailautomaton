@@ -240,74 +240,64 @@ export async function syncUserInbox(userId: string, maxThreads = 10): Promise<{
       }
     }
 
-    // --- SYNCHRONOUS AI ENRICHMENT FOR FIRST 5 EMAILS AND THREADS ---
+    // --- SEQUENTIAL AI ENRICHMENT FOR FIRST 5 EMAILS AND THREADS ---
     const syncEnrichLimit = 5;
     let syncEnrichCount = 0;
-    const enrichPromises: Promise<void>[] = [];
 
+    console.log(`Phase 1: Starting sequential AI enrichment for up to ${syncEnrichLimit} emails...`);
     for (const email of emailsToInsert) {
-      if (syncEnrichCount < syncEnrichLimit) {
+      if (syncEnrichCount >= syncEnrichLimit) break;
+      const aiItem = newMessageIdsForAI.find(item => item.messageId === email.id);
+      if (aiItem) {
         syncEnrichCount++;
-        const aiItem = newMessageIdsForAI.find(item => item.messageId === email.id);
-        if (aiItem) {
-          enrichPromises.push((async () => {
-            let emailSummary = 'Syncing summary...';
-            let category = 'Uncategorized';
-            
-            try {
-              emailSummary = await generateEmailSummary(aiItem.subject, aiItem.fromHeader, aiItem.bodyText, true);
-            } catch (summaryErr) {
-              console.error(`Phase 1: Sync AI summary failed for message ${email.id}:`, summaryErr);
-            }
-
-            try {
-              category = await categorizeEmail(aiItem.subject, aiItem.fromHeader, aiItem.bodyText);
-            } catch (categoryErr) {
-              console.error(`Phase 1: Sync AI categorization failed for message ${email.id}:`, categoryErr);
-            }
-
-            email.summary = emailSummary;
-            email.category = category;
-          })());
+        let emailSummary = 'Syncing summary...';
+        let category = 'Uncategorized';
+        
+        try {
+          emailSummary = await generateEmailSummary(aiItem.subject, aiItem.fromHeader, aiItem.bodyText, true);
+        } catch (summaryErr) {
+          console.error(`Phase 1: Sync AI summary failed for message ${email.id}:`, summaryErr);
         }
+
+        try {
+          category = await categorizeEmail(aiItem.subject, aiItem.fromHeader, aiItem.bodyText);
+        } catch (categoryErr) {
+          console.error(`Phase 1: Sync AI categorization failed for message ${email.id}:`, categoryErr);
+        }
+
+        email.summary = emailSummary;
+        email.category = category;
       }
     }
 
-    const threadEnrichPromises: Promise<void>[] = [];
     const first5ThreadIds = Array.from(new Set(emailsToInsert.slice(0, 5).map(e => e.thread_id)));
+    console.log(`Phase 1: Starting sequential AI enrichment for up to ${first5ThreadIds.length} threads...`);
     for (const thread of threadsToUpsert) {
       if (first5ThreadIds.includes(thread.id)) {
         const item = threadsData.find(d => d && d.threadId === thread.id);
         if (item) {
           const messages = item.gmailThread.messages || [];
-          threadEnrichPromises.push((async () => {
-            try {
-              const threadMsgs = messages.map((e: any) => {
-                const headers = e.payload?.headers || [];
-                const fromHeader = getHeader(headers, 'From');
-                const subject = getHeader(headers, 'Subject');
-                const dateStr = getHeader(headers, 'Date');
-                const bodyText = parseMessageBody(e.payload);
-                return {
-                  from: fromHeader,
-                  subject: subject || '',
-                  body: bodyText || '',
-                  date: dateStr ? new Date(dateStr).toLocaleString() : '',
-                };
-              });
-              const threadSummary = await generateThreadSummary(threadMsgs, true);
-              thread.summary = threadSummary;
-            } catch (err) {
-              console.error(`Phase 1: Sync AI thread summary failed for ${thread.id}:`, err);
-            }
-          })());
+          try {
+            const threadMsgs = messages.map((e: any) => {
+              const headers = e.payload?.headers || [];
+              const fromHeader = getHeader(headers, 'From');
+              const subject = getHeader(headers, 'Subject');
+              const dateStr = getHeader(headers, 'Date');
+              const bodyText = parseMessageBody(e.payload);
+              return {
+                from: fromHeader,
+                subject: subject || '',
+                body: bodyText || '',
+                date: dateStr ? new Date(dateStr).toLocaleString() : '',
+              };
+            });
+            const threadSummary = await generateThreadSummary(threadMsgs, true);
+            thread.summary = threadSummary;
+          } catch (err) {
+            console.error(`Phase 1: Sync AI thread summary failed for ${thread.id}:`, err);
+          }
         }
       }
-    }
-
-    if (enrichPromises.length > 0 || threadEnrichPromises.length > 0) {
-      console.log(`Phase 1: Synchronously generating AI summaries for ${enrichPromises.length} emails and ${threadEnrichPromises.length} threads...`);
-      await Promise.all([...enrichPromises, ...threadEnrichPromises]);
     }
 
     // 1. Bulk Upsert Threads
@@ -427,8 +417,8 @@ export async function enrichEmails(userId: string, newMessageIdsForAI: Array<{
           .eq('id', item.messageId);
 
         // Generate + store vector embeddings
-        const chunks = chunkText(item.bodyText, 2500, 300);
-        await Promise.all(chunks.map(async (chunk) => {
+        const chunks = chunkText(item.bodyText, 800, 150);
+        for (const chunk of chunks) {
           try {
             const embeddingVector = await generateEmbedding(chunk, 'passage', true);
             await supabaseAdmin.from('email_embeddings').insert({
@@ -441,7 +431,7 @@ export async function enrichEmails(userId: string, newMessageIdsForAI: Array<{
           } catch (embedErr) {
             console.error(`Phase 2: Embedding error for ${item.messageId}:`, embedErr);
           }
-        }));
+        }
       } catch (aiErr) {
         console.error(`Phase 2: AI enrichment error for ${item.messageId}:`, aiErr);
       }
