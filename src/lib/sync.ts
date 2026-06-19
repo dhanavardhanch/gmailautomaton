@@ -255,7 +255,7 @@ export async function syncUserInbox(userId: string, maxThreads = 10): Promise<{
             let category = 'Uncategorized';
             
             try {
-              emailSummary = await generateEmailSummary(aiItem.subject, aiItem.fromHeader, aiItem.bodyText);
+              emailSummary = await generateEmailSummary(aiItem.subject, aiItem.fromHeader, aiItem.bodyText, true);
             } catch (summaryErr) {
               console.error(`Phase 1: Sync AI summary failed for message ${email.id}:`, summaryErr);
             }
@@ -295,7 +295,7 @@ export async function syncUserInbox(userId: string, maxThreads = 10): Promise<{
                   date: dateStr ? new Date(dateStr).toLocaleString() : '',
                 };
               });
-              const threadSummary = await generateThreadSummary(threadMsgs);
+              const threadSummary = await generateThreadSummary(threadMsgs, true);
               thread.summary = threadSummary;
             } catch (err) {
               console.error(`Phase 1: Sync AI thread summary failed for ${thread.id}:`, err);
@@ -409,7 +409,7 @@ export async function enrichEmails(userId: string, newMessageIdsForAI: Array<{
         let category = 'Uncategorized';
 
         try {
-          emailSummary = await generateEmailSummary(item.subject, item.fromHeader, item.bodyText);
+          emailSummary = await generateEmailSummary(item.subject, item.fromHeader, item.bodyText, true);
         } catch (summaryErr) {
           console.error(`Phase 2: Background AI summary failed for message ${item.messageId}:`, summaryErr);
         }
@@ -430,7 +430,7 @@ export async function enrichEmails(userId: string, newMessageIdsForAI: Array<{
         const chunks = chunkText(item.bodyText, 2500, 300);
         await Promise.all(chunks.map(async (chunk) => {
           try {
-            const embeddingVector = await generateEmbedding(chunk);
+            const embeddingVector = await generateEmbedding(chunk, 'passage', true);
             await supabaseAdmin.from('email_embeddings').insert({
               email_id: item.messageId,
               thread_id: item.threadId,
@@ -463,7 +463,7 @@ export async function enrichEmails(userId: string, newMessageIdsForAI: Array<{
           date: e.received_at ? new Date(e.received_at).toLocaleString() : '',
         }));
 
-        const threadSummary = await generateThreadSummary(threadMsgs);
+        const threadSummary = await generateThreadSummary(threadMsgs, true);
         await supabaseAdmin
           .from('email_threads')
           .update({ summary: threadSummary, updated_at: new Date().toISOString() })

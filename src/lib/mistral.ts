@@ -60,9 +60,10 @@ const nimLimiter = new ConcurrencyLimiter(3, 500);
 export async function nimRetry<T>(
   operation: () => Promise<T>,
   retries = 5,
-  delay = 2000
+  delay = 2000,
+  isBackground = false
 ): Promise<T> {
-  return nimLimiter.run(async () => {
+  const runOp = async () => {
     let currentDelay = delay;
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
@@ -92,7 +93,13 @@ export async function nimRetry<T>(
       }
     }
     throw new Error('NVIDIA NIM Retries Exhausted');
-  });
+  };
+
+  if (isBackground) {
+    return nimLimiter.run(runOp);
+  } else {
+    return runOp();
+  }
 }
 
 /**
@@ -122,7 +129,8 @@ function l2Normalize(vector: number[]): number[] {
 export async function generateEmailSummary(
   subject: string,
   from: string,
-  body: string
+  body: string,
+  isBackground = false
 ): Promise<string> {
   try {
     const client = getNvidiaClient();
@@ -141,7 +149,10 @@ export async function generateEmailSummary(
         ],
         temperature: 0.3,
         max_tokens: 150,
-      })
+      }),
+      5,
+      2000,
+      isBackground
     );
 
     return response.choices[0]?.message?.content?.trim() || 'No summary generated.';
@@ -155,7 +166,8 @@ export async function generateEmailSummary(
  * Generate a concise summary of the conversation arc in an entire email thread.
  */
 export async function generateThreadSummary(
-  messages: Array<{ from: string; subject: string; body: string; date: string }>
+  messages: Array<{ from: string; subject: string; body: string; date: string }>,
+  isBackground = false
 ): Promise<string> {
   try {
     const client = getNvidiaClient();
@@ -184,7 +196,10 @@ Content: ${cleanText(msg.body, 1200)}`;
         ],
         temperature: 0.3,
         max_tokens: 350,
-      })
+      }),
+      5,
+      2000,
+      isBackground
     );
 
     return response.choices[0]?.message?.content?.trim() || 'No thread summary generated.';
@@ -200,7 +215,8 @@ Content: ${cleanText(msg.body, 1200)}`;
  */
 export async function generateEmbedding(
   text: string,
-  inputType: 'query' | 'passage' = 'passage'
+  inputType: 'query' | 'passage' = 'passage',
+  isBackground = false
 ): Promise<number[]> {
   try {
     const client = getNvidiaClient();
@@ -215,7 +231,10 @@ export async function generateEmbedding(
         input: cleaned,
         encoding_format: 'float',
         input_type: inputType
-      } as any) // cast to avoid ts limits with extra properties in openAI client definition
+      } as any), // cast to avoid ts limits with extra properties in openAI client definition
+      5,
+      2000,
+      isBackground
     );
 
     if (response?.data?.[0]?.embedding) {
