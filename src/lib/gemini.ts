@@ -68,23 +68,28 @@ async function _retryWithBackoff<T>(
   try {
     return await operation();
   } catch (error: any) {
+    console.error('Raw Gemini Error:', error);
     const status = error.status || error.code || (error.response && error.response.status);
     const errStr = (String(error) + ' ' + (error.message || '')).toLowerCase();
     
     // Check for daily quota exhaustion or billing limit errors (non-retryable)
+    // Exclude per-minute limits since they are transient and will resolve after a brief delay
     const isDailyQuotaExceeded =
-      errStr.includes('exceeded your current quota') ||
-      errStr.includes('quota exceeded') ||
-      errStr.includes('perday') ||
-      errStr.includes('free_tier_requests') ||
-      errStr.includes('billing details');
+      (errStr.includes('daily') ||
+       errStr.includes('per day') ||
+       errStr.includes('billing details')) &&
+      !errStr.includes('per minute') &&
+      !errStr.includes('requests per minute') &&
+      !errStr.includes('qpm') &&
+      !errStr.includes('queries per minute') &&
+      !errStr.includes('retry in') &&
+      !errStr.includes('retrydelay');
 
     if (isDailyQuotaExceeded) {
       console.error('Gemini API Daily Quota Exceeded (non-retryable). Disabling Gemini calls for this key.');
       updateGeminiQuotaStatus(true, getAppConfig().geminiApiKey);
       throw new Error('GEMINI_QUOTA_EXHAUSTED');
     }
-
 
     const isRetryable =
       status === 429 ||
@@ -110,8 +115,8 @@ async function _retryWithBackoff<T>(
  */
 export async function geminiRetry<T>(
   operation: () => Promise<T>,
-  retries = 3,
-  delay = 3000
+  retries = 5,
+  delay = 4000
 ): Promise<T> {
   checkQuotaStatus();
   return geminiLimiter.run(() => _retryWithBackoff(operation, retries, delay));
