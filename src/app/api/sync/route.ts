@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { syncUserInbox } from '@/lib/sync';
+import { syncUserInbox, enrichEmails } from '@/lib/sync';
 import { supabaseAdmin } from '@/lib/supabase';
+import { after } from 'next/server';
 
 export async function POST(request: Request) {
   try {
@@ -28,14 +29,25 @@ export async function POST(request: Request) {
       .update({ sync_status: 'syncing', updated_at: new Date().toISOString() })
       .eq('id', userId);
 
-    // Perform sync in the background
-    syncUserInbox(userId, maxThreads).catch((err) => {
-      console.error(`Background sync error for user ${userId}:`, err);
-    });
+    // Perform Phase 1 sync synchronously so it blocks Vercel just long enough to save raw emails
+    const syncResult = await syncUserInbox(userId, maxThreads);
+    const newMessageIdsForAI = syncResult.newMessageIdsForAI;
+
+    if (syncResult.success && newMessageIdsForAI && newMessageIdsForAI.length > 0) {
+      after(async () => {
+        try {
+          await enrichEmails(userId, newMessageIdsForAI);
+        } catch (err) {
+          console.error(`Background Phase 2 AI enrichment error for user ${userId}:`, err);
+        }
+      });
+    }
 
     return NextResponse.json({
-      success: true,
-      message: 'Inbox synchronization initiated in background.',
+      success: syncResult.success,
+      message: syncResult.success 
+        ? 'Inbox synchronization completed.' 
+        : `Inbox synchronization failed: ${syncResult.error}`,
     });
   } catch (error: any) {
     console.error('Error in POST /api/sync:', error);
@@ -63,14 +75,25 @@ export async function GET(request: Request) {
       .update({ sync_status: 'syncing', updated_at: new Date().toISOString() })
       .eq('id', userId);
 
-    // Perform sync in the background
-    syncUserInbox(userId, 20).catch((err) => {
-      console.error(`Background sync error for user ${userId}:`, err);
-    });
+    // Perform Phase 1 sync
+    const syncResult = await syncUserInbox(userId, 20);
+    const newMessageIdsForAI = syncResult.newMessageIdsForAI;
+
+    if (syncResult.success && newMessageIdsForAI && newMessageIdsForAI.length > 0) {
+      after(async () => {
+        try {
+          await enrichEmails(userId, newMessageIdsForAI);
+        } catch (err) {
+          console.error(`Background Phase 2 AI enrichment error for user ${userId}:`, err);
+        }
+      });
+    }
 
     return NextResponse.json({
-      success: true,
-      message: 'Inbox synchronization initiated in background.',
+      success: syncResult.success,
+      message: syncResult.success 
+        ? 'Inbox synchronization completed.' 
+        : `Inbox synchronization failed: ${syncResult.error}`,
     });
   } catch (error: any) {
     console.error('Error in GET /api/sync:', error);
