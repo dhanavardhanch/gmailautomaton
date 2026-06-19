@@ -240,6 +240,69 @@ export async function syncUserInbox(userId: string, maxThreads = 10): Promise<{
       }
     }
 
+    // --- SYNCHRONOUS AI ENRICHMENT FOR FIRST 5 EMAILS AND THREADS ---
+    const syncEnrichLimit = 5;
+    let syncEnrichCount = 0;
+    const enrichPromises: Promise<void>[] = [];
+
+    for (const email of emailsToInsert) {
+      if (syncEnrichCount < syncEnrichLimit) {
+        syncEnrichCount++;
+        const aiItem = newMessageIdsForAI.find(item => item.messageId === email.id);
+        if (aiItem) {
+          enrichPromises.push((async () => {
+            try {
+              const [emailSummary, category] = await Promise.all([
+                generateEmailSummary(aiItem.subject, aiItem.fromHeader, aiItem.bodyText),
+                categorizeEmail(aiItem.subject, aiItem.fromHeader, aiItem.bodyText),
+              ]);
+              email.summary = emailSummary;
+              email.category = category;
+            } catch (err) {
+              console.error(`Phase 1: Sync AI enrichment failed for message ${email.id}:`, err);
+            }
+          })());
+        }
+      }
+    }
+
+    const threadEnrichPromises: Promise<void>[] = [];
+    const first5ThreadIds = Array.from(new Set(emailsToInsert.slice(0, 5).map(e => e.thread_id)));
+    for (const thread of threadsToUpsert) {
+      if (first5ThreadIds.includes(thread.id)) {
+        const item = threadsData.find(d => d && d.threadId === thread.id);
+        if (item) {
+          const messages = item.gmailThread.messages || [];
+          threadEnrichPromises.push((async () => {
+            try {
+              const threadMsgs = messages.map((e: any) => {
+                const headers = e.payload?.headers || [];
+                const fromHeader = getHeader(headers, 'From');
+                const subject = getHeader(headers, 'Subject');
+                const dateStr = getHeader(headers, 'Date');
+                const bodyText = parseMessageBody(e.payload);
+                return {
+                  from: fromHeader,
+                  subject: subject || '',
+                  body: bodyText || '',
+                  date: dateStr ? new Date(dateStr).toLocaleString() : '',
+                };
+              });
+              const threadSummary = await generateThreadSummary(threadMsgs);
+              thread.summary = threadSummary;
+            } catch (err) {
+              console.error(`Phase 1: Sync AI thread summary failed for ${thread.id}:`, err);
+            }
+          })());
+        }
+      }
+    }
+
+    if (enrichPromises.length > 0 || threadEnrichPromises.length > 0) {
+      console.log(`Phase 1: Synchronously generating AI summaries for ${enrichPromises.length} emails and ${threadEnrichPromises.length} threads...`);
+      await Promise.all([...enrichPromises, ...threadEnrichPromises]);
+    }
+
     // 1. Bulk Upsert Threads
     if (threadsToUpsert.length > 0) {
       console.log(`Phase 1: Bulk upserting ${threadsToUpsert.length} threads in database...`);

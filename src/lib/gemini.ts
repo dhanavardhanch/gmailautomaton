@@ -66,7 +66,16 @@ async function _retryWithBackoff<T>(
   delay: number
 ): Promise<T> {
   try {
-    return await operation();
+    const result = await operation();
+    try {
+      if (isGeminiQuotaExhausted()) {
+        console.log('Gemini API call succeeded. Clearing quota exhaustion status.');
+        updateGeminiQuotaStatus(false, '');
+      }
+    } catch (e) {
+      // ignore
+    }
+    return result;
   } catch (error: any) {
     console.error('Raw Gemini Error:', error);
     const status = error.status || error.code || (error.response && error.response.status);
@@ -118,7 +127,6 @@ export async function geminiRetry<T>(
   retries = 5,
   delay = 4000
 ): Promise<T> {
-  checkQuotaStatus();
   return geminiLimiter.run(() => _retryWithBackoff(operation, retries, delay));
 }
 
