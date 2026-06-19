@@ -51,8 +51,9 @@ class ConcurrencyLimiter {
   }
 }
 
-// Concurrency limiter for NVIDIA NIM API
-const nimLimiter = new ConcurrencyLimiter(3, 500);
+// Concurrency limiter for background requests on NVIDIA NIM API
+// Paced to 1 concurrent request and 2-second delay to safely avoid 60 RPM developer limits
+const nimLimiter = new ConcurrencyLimiter(1, 2000);
 
 /**
  * Retry wrapper with backoff for NVIDIA NIM API calls.
