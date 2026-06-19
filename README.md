@@ -1,75 +1,140 @@
 # Aether: AI-Powered Gmail Intelligence Platform
 
-Aether is an intelligent email automation and reasoning web application. It securely links to a user's Gmail inbox via OAuth 2.0, syncs email data incrementally into a Supabase PostgreSQL database (equipped with pgvector), and features a RAG (Retrieval-Augmented Generation) assistant that acts as a secure knowledge base over the user's emails.
+Aether is a secure, state-of-the-art email automation, summarization, and reasoning platform. Built with Next.js, React 19, and Supabase, it securely indexes your Gmail messages via Google OAuth 2.0, performs semantic analysis, and runs a Retrieval-Augmented Generation (RAG) assistant over your emails using Gemini and NVIDIA NIM models.
 
 ---
 
-## Key Features
+## 🌟 Key Features
 
-1. **Gmail Integration**: Secure OAuth 2.0 connection that incrementally syncs inbox threads, messages, and headers. Includes exponential backoff retries to manage Google API rate-limiting (429s).
-2. **Conversation Arc Summarization**: Computes individual email summaries (Gemini 2.5) and generates chronological thread conversation summaries.
-3. **Smart Email Composer**: Generates professional replies with complete conversation context from short prompts, sending emails using appropriate `In-Reply-To` and `References` headers to preserve threading.
-4. **Email Categorization**: Classifies emails automatically into 6 categories (Newsletters, Job/Recruitment, Finance, Notifications, Personal, Work) using Llama 3.1 70B via NVIDIA NIM.
-5. **AI Chat Assistant drawer**: An inbox chat agent implementing hybrid search (vector matching on text-embedding-004 + metadata filters). Supports source clarity with clickable citations that open referenced threads in the dashboard.
-6. **Newsletter Deduplication**: Clusters duplicate news stories across multiple subscription newsletters semantically using NVIDIA NIM.
+1. **Multi-Account Dynamic Separation**: Aether supports connecting multiple Gmail accounts simultaneously. Each connection is assigned a unique client-side UUID, ensuring that emails, threads, and vector embeddings remain segregated in Supabase and that users only see their own emails.
+2. **Fast Two-Phase Sync**: 
+   - **Phase 1 (Instant Sync)**: Raw emails are fetched and saved to the database immediately (takes 1–2 seconds). The UI sync loader completes, allowing you to read your emails instantly.
+   - **Phase 2 (Background AI Enrichment)**: AI email summarization, categorization, and chunk vector embedding generation run asynchronously in the background.
+3. **Smart Email Composer**: Generates contextually accurate draft replies by analyzing the thread history. Sends responses with proper `In-Reply-To` and `References` headers to maintain Gmail threading.
+4. **Email Categorization**: Automatically groups emails into 6 categories (*Newsletters, Job/Recruitment, Finance, Notifications, Personal, Work*) using Llama 3.1 70B via NVIDIA NIM.
+5. **Hybrid Vector RAG Chat Assistant**: Chat directly with your inbox! The assistant runs a vector search using Gemini text-embeddings and references the exact sources with clickable citation links that open corresponding email threads in the dashboard.
+6. **Smart Sync Pagination**: Ingests your inbox incrementally. Each sync click fetches the newest emails first. If there are no new emails, it automatically pages back to sync your older emails in batches of 10, keeping rate-limit quotas safe.
 
 ---
 
-## Tech Stack
+## 🛠 Tech Stack
 
-- **Frontend & Backend**: Next.js (TypeScript, App Router, React 19)
-- **Styling**: Custom responsive CSS (Vanilla CSS Modules / Globals)
+- **Framework**: Next.js 16 (TypeScript, App Router, React 19)
+- **Styling**: Responsive Vanilla CSS Modules
 - **Database**: Supabase PostgreSQL with `pgvector`
-- **Primary AI Model**: Google Gemini API (`gemini-2.5-flash` & `text-embedding-004`)
-- **Secondary AI Model**: NVIDIA NIM (`meta/llama-3.1-70b-instruct` or `nvidia/llama-3.1-nemotron-70b-instruct`)
+- **Primary AI Suite (Google Gemini)**: 
+  - `gemini-2.5-flash` for email/thread summaries and draft replies.
+  - `gemini-embedding-2` for 768-dimensional text embeddings.
+- **Secondary AI Suite (NVIDIA NIM)**:
+  - `meta/llama-3.1-70b-instruct` (or Nemotron) for zero-shot email categorization and newsletter topic deduplication.
 
 ---
 
-## Step-by-Step Setup Guide
+## 📋 Pre-requisites & Account Configuration
 
-### 1. Database Setup (Supabase)
-1. Sign up for a free project at [Supabase](https://supabase.com).
-2. Open your project dashboard, navigate to the **SQL Editor**, and create a new query.
-3. Open [schema.sql](file:///c:/Users/troog/Downloads/Mail/gmailautomaton/schema.sql) from this project, paste the content into the Supabase SQL editor, and click **Run**.
-4. Under **Project Settings** -> **API**, locate your:
+Before starting, you must retrieve API credentials from the following platforms:
+
+### 1. Supabase Project Setup
+1. Create a free project at [Supabase](https://supabase.com).
+2. Go to the **SQL Editor** tab in your Supabase dashboard and click **New Query**.
+3. Copy the contents of [`schema.sql`](file:///c:/Users/troog/Downloads/Mail/gmailautomaton/schema.sql), paste it into the editor, and click **Run**. This sets up your tables, vector indexes, and semantic search RPC.
+4. Navigate to **Project Settings** -> **API** to obtain:
    - **Project URL**
    - **Anon Public API Key**
-   - **Service Role Secret Key** (required for background data ingestion)
+   - **Service Role Secret Key** (required to bypass Row Level Security for administrative synchronization)
 
-### 2. Google OAuth Credentials Setup
+### 2. Google Cloud Console (OAuth & Gmail API)
 1. Go to the [Google Cloud Console](https://console.cloud.google.com).
-2. Create a new project, navigate to **APIs & Services** -> **Library**, and search for and **Enable** the **Gmail API**.
-3. Go to **OAuth Consent Screen**:
-   - Choose **External** user type.
-   - Set up developer emails and app details.
+2. Create a project and enable the **Gmail API** under **APIs & Services** -> **Library**.
+3. Configure the **OAuth Consent Screen**:
+   - Select **External** user type.
    - Add scopes: `.../auth/gmail.readonly`, `.../auth/gmail.send`, and `.../auth/userinfo.email`.
-   - Publish your app to Testing status and add your test Gmail address to the Test Users list.
-4. Navigate to **Credentials** -> **Create Credentials** -> **OAuth Client ID**:
+   - Set publish status to **Production** or add your target Gmail accounts under the **Test Users** section.
+4. Go to **Credentials** -> **Create Credentials** -> **OAuth Client ID**:
    - Select **Web Application**.
-   - Add Authorized Redirect URI: `http://localhost:3000/api/oauth/callback`
-   - Retrieve your **Client ID** and **Client Secret**.
+   - Add **Authorized Redirect URIs**:
+     - Local development: `http://localhost:3000/api/oauth/callback`
+     - Production deployment: `https://YOUR-APP.vercel.app/api/oauth/callback`
+   - Copy the generated **Client ID** and **Client Secret**.
 
-### 3. API Keys
-- Obtain a Gemini API Key from Google AI Studio.
-- Obtain an NVIDIA NIM API Key (`nvapi-...`) from build.nvidia.com.
+### 3. AI Platform Keys
+- **Gemini API Key**: Obtain a key from [Google AI Studio](https://aistudio.google.com).
+- **NVIDIA NIM API Key**: Register and generate a key (`nvapi-...`) at [NVIDIA Build](https://build.nvidia.com).
 
-### 4. Running Locally
-1. Start the application:
+---
+
+## 🚀 Step-by-Step Setup Instructions
+
+### Local Development Setup
+
+1. **Clone the Repository & Install Dependencies**:
+   ```bash
+   cd gmailautomaton
+   npm install
+   ```
+
+2. **Configure Environment Variables**:
+   You can configure the app in one of two ways:
+   
+   - **Option A (Setup Wizard)**: Simply run the application (Step 3). Since no `.env.local` exists, you will be redirected to an onboarding configuration screen. Enter your keys, and the application will write them to a local, git-ignored `local_config.json` file.
+   
+   - **Option B (Manual Environment File)**: Create a `.env.local` file in the root of the project with the following:
+     ```env
+     NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+     NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+     SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+     GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+     GOOGLE_CLIENT_SECRET=your-client-secret
+     GOOGLE_REDIRECT_URI=http://localhost:3000/api/oauth/callback
+     GEMINI_API_KEY=your-gemini-key
+     NVIDIA_NIM_API_KEY=nvapi-your-nvidia-key
+     NVIDIA_NIM_MODEL=meta/llama-3.1-70b-instruct
+     ```
+
+3. **Start the Dev Server**:
    ```bash
    npm run dev
    ```
-2. Navigate to `http://localhost:3000` in your web browser.
-3. If credentials are not set in your `.env.local` file, you will be greeted by a **Setup Wizard** page. Enter your Supabase, Google, Gemini, and NVIDIA NIM keys and click **Save**. This creates a local configuration file.
-4. Once configured, click **Connect Gmail account** to authorize the application. Google will redirect you back, initiating the synchronization!
+4. **Open the Application**:
+   Navigate to `http://localhost:3000`. Click **Connect Gmail account** to link your inbox.
 
 ---
 
-## Project Structure
+### Production Deployment to Vercel
+
+1. **Link Google OAuth Redirect URI**:
+   Ensure you have added your Vercel URL `https://YOUR-APP.vercel.app/api/oauth/callback` to the Authorized Redirect URIs in your Google Cloud Console.
+
+2. **Deploy via Vercel CLI**:
+   Install the Vercel CLI, login, and initialize the project:
+   ```bash
+   npm install -g vercel
+   vercel login
+   vercel --prod
+   ```
+
+3. **Set Production Environment Variables**:
+   Add all keys listed in the `.env.local` section to **Vercel Dashboard** -> **Project Settings** -> **Environment Variables**.
+   *Note: Ensure `GOOGLE_REDIRECT_URI` on Vercel is set to `https://YOUR-APP.vercel.app/api/oauth/callback`.*
+
+4. **Add URL Configuration in Supabase**:
+   Go to **Supabase Dashboard** -> **Authentication** -> **URL Configuration**:
+   - Set **Site URL** to `https://YOUR-APP.vercel.app`.
+   - Add `https://YOUR-APP.vercel.app/**` to **Redirect URLs**.
+
+5. **Redeploy**:
+   ```bash
+   vercel --prod
+   ```
+
+---
+
+## 📂 Project Structure
 
 ```text
 ├── schema.sql           # Database tables, pgvector indices, and search RPC
-├── local_config.json    # Local credentials configuration file (ignored by git)
 ├── Architecture.md      # Detailed system architecture document
+├── README.md            # App setup guide and documentation
 └── src/
     ├── app/             # Next.js App Router (pages and API Route Handlers)
     │   ├── api/
@@ -85,8 +150,18 @@ Aether is an intelligent email automation and reasoning web application. It secu
     │   └── page.tsx     # Onboarding setup forms
     └── lib/             # Helper libraries
         ├── config.ts    # Config loaders (env vs local config file)
-        ├── supabase.ts  # Dynamic ES6 connection Proxy wrappers
+        ├── supabase.ts  # Dynamic connection Proxy wrappers
         ├── gmail.ts     # Google API helpers and MIME body parser
         ├── gemini.ts    # Summarization, RAG prompts, and embedding models
         └── nvidia.ts    # NVIDIA NIM categorization and news deduplication
 ```
+
+---
+
+## ⚙️ How Synchronization and Paging Works Under the Hood
+
+The background synchronization logic is located in [`src/lib/sync.ts`](file:///c:/Users/troog/Downloads/Mail/gmailautomaton/src/lib/sync.ts):
+
+1. **New Email Detection**: When you click the **Sync** button, the worker checks the first page (newest 10 threads) of your Gmail inbox. If it detects any thread that has not been saved in `email_threads`, it ingests the new threads.
+2. **Inbox Paging (Older Sync)**: If there are no new emails on the first page, the sync reads the `last_history_id` column (which stores the Google API `nextPageToken`). It uses this token to fetch the next page of 10 older threads. This allows users to page backward in time and sync their entire historical inbox in manageable increments of 10 emails per click.
+3. **Non-blocking Status Update**: The moment raw emails are successfully inserted into Supabase (Phase 1), `sync_status` is updated to `'completed'`. The HTTP request resolves immediately, releasing the client UI loader. The heavy processing (generating summaries and computing embeddings) continues to execute asynchronously in the background.
