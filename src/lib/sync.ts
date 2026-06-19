@@ -298,11 +298,14 @@ export async function syncUserInbox(userId: string, maxThreads = 10): Promise<{ 
 
   } catch (error: any) {
     console.error('Error in syncUserInbox:', error);
-    await supabaseAdmin
-      .from('gmail_credentials')
-      .update({ sync_status: 'failed', updated_at: new Date().toISOString() })
-      .eq('id', userId)
-      .catch((e: any) => console.error('Failed to update sync_status to failed:', e));
+    try {
+      await supabaseAdmin
+        .from('gmail_credentials')
+        .update({ sync_status: 'failed', updated_at: new Date().toISOString() })
+        .eq('id', userId);
+    } catch (e: any) {
+      console.error('Failed to update sync_status to failed:', e);
+    }
     return { success: false, count: 0, error: error.message || String(error) };
   }
 }
