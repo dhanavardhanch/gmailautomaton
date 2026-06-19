@@ -10,7 +10,6 @@ interface ConfigState {
   googleClientId: string;
   googleClientSecret: string;
   googleRedirectUri: string;
-  geminiApiKey: string;
   nvidiaNimApiKey: string;
   nvidiaNimModel: string;
 }
@@ -31,7 +30,6 @@ export default function OnboardingPage() {
     googleClientId: '',
     googleClientSecret: '',
     googleRedirectUri: 'http://localhost:3000/api/oauth/callback',
-    geminiApiKey: '',
     nvidiaNimApiKey: '',
     nvidiaNimModel: 'meta/llama-3.1-70b-instruct',
   });
@@ -259,18 +257,7 @@ export default function OnboardingPage() {
               />
             </div>
 
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Google Gemini API Key</label>
-              <input
-                style={styles.input}
-                type="password"
-                name="geminiApiKey"
-                placeholder="AIzaSy..."
-                value={form.geminiApiKey}
-                onChange={handleInputChange}
-                required
-              />
-            </div>
+
 
             <div style={styles.inputGroup}>
               <label style={styles.label}>NVIDIA NIM API Key</label>

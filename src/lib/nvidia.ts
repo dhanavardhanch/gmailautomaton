@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { getAppConfig } from './config';
-import { cleanText } from './gemini';
+import { cleanText } from './mistral';
 
 const getNvidiaClient = () => {
   const config = getAppConfig();

@@ -14,7 +14,7 @@ import {
   generateEmailSummary, 
   generateThreadSummary, 
   generateEmbedding 
-} from './gemini';
+} from './mistral';
 import { categorizeEmail } from './nvidia';
 
 /**

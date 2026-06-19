@@ -1,6 +1,6 @@
 # Aether: AI-Powered Gmail Intelligence Platform
 
-Aether is a secure, state-of-the-art email automation, summarization, and reasoning platform. Built with Next.js, React 19, and Supabase, it securely indexes your Gmail messages via Google OAuth 2.0, performs semantic analysis, and runs a Retrieval-Augmented Generation (RAG) assistant over your emails using Gemini and NVIDIA NIM models.
+Aether is a secure, state-of-the-art email automation, summarization, and reasoning platform. Built with Next.js, React 19, and Supabase, it securely indexes your Gmail messages via Google OAuth 2.0, performs semantic analysis, and runs a Retrieval-Augmented Generation (RAG) assistant over your emails using Mistral and NVIDIA NIM models.
 
 ---
 
@@ -12,7 +12,7 @@ Aether is a secure, state-of-the-art email automation, summarization, and reason
    - **Phase 2 (Background AI Enrichment)**: AI email summarization, categorization, and chunk vector embedding generation run asynchronously in the background.
 3. **Smart Email Composer**: Generates contextually accurate draft replies by analyzing the thread history. Sends responses with proper `In-Reply-To` and `References` headers to maintain Gmail threading.
 4. **Email Categorization**: Automatically groups emails into 6 categories (*Newsletters, Job/Recruitment, Finance, Notifications, Personal, Work*) using Llama 3.1 70B via NVIDIA NIM.
-5. **Hybrid Vector RAG Chat Assistant**: Chat directly with your inbox! The assistant runs a vector search using Gemini text-embeddings and references the exact sources with clickable citation links that open corresponding email threads in the dashboard.
+5. **Hybrid Vector RAG Chat Assistant**: Chat directly with your inbox! The assistant runs a vector search using NVIDIA NIM text-embeddings and references the exact sources with clickable citation links that open corresponding email threads in the dashboard.
 6. **Smart Sync Pagination**: Ingests your inbox incrementally. Each sync click fetches the newest emails first. If there are no new emails, it automatically pages back to sync your older emails in batches of 10, keeping rate-limit quotas safe.
 
 ---
@@ -22,10 +22,9 @@ Aether is a secure, state-of-the-art email automation, summarization, and reason
 - **Framework**: Next.js 16 (TypeScript, App Router, React 19)
 - **Styling**: Responsive Vanilla CSS Modules
 - **Database**: Supabase PostgreSQL with `pgvector`
-- **Primary AI Suite (Google Gemini)**: 
-  - `gemini-2.5-flash` for email/thread summaries and draft replies.
-  - `gemini-embedding-2` for 768-dimensional text embeddings.
-- **Secondary AI Suite (NVIDIA NIM)**:
+- **AI Suite (NVIDIA NIM & Mistral)**: 
+  - `mistralai/mistral-medium-3.5-128b` (or other Mistral models) for email/thread summaries, draft replies, search query parsing, and conversational RAG.
+  - `nvidia/nv-embedqa-e5-v5` for 768-dimensional truncated text embeddings.
   - `meta/llama-3.1-70b-instruct` (or Nemotron) for zero-shot email categorization and newsletter topic deduplication.
 
 ---
@@ -58,8 +57,7 @@ Before starting, you must retrieve API credentials from the following platforms:
    - Copy the generated **Client ID** and **Client Secret**.
 
 ### 3. AI Platform Keys
-- **Gemini API Key**: Obtain a key from [Google AI Studio](https://aistudio.google.com).
-- **NVIDIA NIM API Key**: Register and generate a key (`nvapi-...`) at [NVIDIA Build](https://build.nvidia.com).
+- **NVIDIA NIM API Key**: Register and generate a key (`nvapi-...`) at [NVIDIA Build](https://build.nvidia.com) to power all Mistral text generation and E5 embeddings.
 
 ---
 
@@ -86,9 +84,8 @@ Before starting, you must retrieve API credentials from the following platforms:
      GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
      GOOGLE_CLIENT_SECRET=your-client-secret
      GOOGLE_REDIRECT_URI=http://localhost:3000/api/oauth/callback
-     GEMINI_API_KEY=your-gemini-key
      NVIDIA_NIM_API_KEY=nvapi-your-nvidia-key
-     NVIDIA_NIM_MODEL=meta/llama-3.1-70b-instruct
+     NVIDIA_NIM_MODEL=mistralai/mistral-medium-3.5-128b
      ```
 
 3. **Start the Dev Server**:
@@ -152,7 +149,7 @@ Before starting, you must retrieve API credentials from the following platforms:
         ├── config.ts    # Config loaders (env vs local config file)
         ├── supabase.ts  # Dynamic connection Proxy wrappers
         ├── gmail.ts     # Google API helpers and MIME body parser
-        ├── gemini.ts    # Summarization, RAG prompts, and embedding models
+        ├── mistral.ts   # Summarization, RAG prompts, and embedding models
         └── nvidia.ts    # NVIDIA NIM categorization and news deduplication
 ```
 

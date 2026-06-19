@@ -1,24 +1,36 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { GoogleGenAI } from '@google/genai';
 import { deduplicateNewsletters, NewsItem } from '@/lib/nvidia';
+import OpenAI from 'openai';
+import { getAppConfig } from '@/lib/config';
+import { nimRetry } from '@/lib/mistral';
 
-// Initialize a local Gemini client just for extraction
-const getGeminiClient = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not defined.');
-  return new GoogleGenAI({ apiKey });
+// Initialize a local NIM client just for extraction
+const getNvidiaClient = () => {
+  const config = getAppConfig();
+  const apiKey = config.nvidiaNimApiKey;
+  if (!apiKey) throw new Error('NVIDIA_NIM_API_KEY is not defined.');
+  return new OpenAI({
+    apiKey,
+    baseURL: 'https://integrate.api.nvidia.com/v1',
+  });
+};
+
+const getModelName = () => {
+  const config = getAppConfig();
+  return config.nvidiaNimModel || 'mistralai/mistral-medium-3.5-128b';
 };
 
 /**
- * Uses Gemini to parse a newsletter body and extract news items.
+ * Uses Mistral to parse a newsletter body and extract news items.
  */
 async function extractNewsFromNewsletter(
   body: string,
   sourceName: string
 ): Promise<NewsItem[]> {
   try {
-    const ai = getGeminiClient();
+    const client = getNvidiaClient();
+    const model = getModelName();
     const systemPrompt = `You are a news extraction assistant. Scan the following newsletter email and extract all major news items, articles, or stories.
 For each news item, extract:
 - The title or headline
@@ -29,17 +41,18 @@ Each object must have exactly these fields:
 - "title" (string)
 - "summary" (string)`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        { role: 'user', parts: [{ text: systemPrompt + '\n\nNewsletter Body:\n' + body.slice(0, 4000) }] }
-      ],
-      config: {
+    const response = await nimRetry(() =>
+      client.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: 'Newsletter Body:\n' + body.slice(0, 4000) }
+        ],
         temperature: 0.1,
-      }
-    });
+      })
+    );
 
-    const rawJson = response.text?.trim() || '[]';
+    const rawJson = response.choices[0]?.message?.content?.trim() || '[]';
     const cleanedJson = rawJson
       .replace(/^```json/i, '')
       .replace(/^```/m, '')

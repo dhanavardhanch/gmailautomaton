@@ -22,7 +22,6 @@ export async function GET() {
         googleClientId: mask(config.googleClientId),
         googleClientSecret: mask(config.googleClientSecret),
         googleRedirectUri: config.googleRedirectUri,
-        geminiApiKey: mask(config.geminiApiKey),
         nvidiaNimApiKey: mask(config.nvidiaNimApiKey),
         nvidiaNimModel: config.nvidiaNimModel,
       },
@@ -43,7 +42,7 @@ export async function POST(request: Request) {
       !newConfig.supabaseServiceKey ||
       !newConfig.googleClientId ||
       !newConfig.googleClientSecret ||
-      !newConfig.geminiApiKey
+      !newConfig.nvidiaNimApiKey
     ) {
       return NextResponse.json({ error: 'All primary configurations are required.' }, { status: 400 });
     }

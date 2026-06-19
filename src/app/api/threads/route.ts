@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { isGeminiQuotaExhausted } from '@/lib/gemini';
+
 
 export async function GET(request: Request) {
   try {
@@ -171,7 +171,7 @@ export async function GET(request: Request) {
         email: credentials.email,
         syncStatus: syncStatus,
         lastSyncedAt: credentials.last_synced_at,
-        geminiQuotaExhausted: isGeminiQuotaExhausted(),
+        geminiQuotaExhausted: false,
       };
     }
 

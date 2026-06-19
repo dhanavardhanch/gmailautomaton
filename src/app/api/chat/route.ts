@@ -1,15 +1,24 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
 import { supabaseAdmin } from '@/lib/supabase';
-import { generateEmbedding, chatAgentResponse, geminiRetry } from '@/lib/gemini';
+import { generateEmbedding, chatAgentResponse, nimRetry } from '@/lib/mistral';
 import { getAppConfig } from '@/lib/config';
 
 // Initialize a local Gemini client just for filter parsing
-const getGeminiClient = () => {
+import OpenAI from 'openai';
+
+const getNvidiaClient = () => {
   const config = getAppConfig();
-  const apiKey = config.geminiApiKey;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not defined.');
-  return new GoogleGenAI({ apiKey });
+  const apiKey = config.nvidiaNimApiKey;
+  if (!apiKey) throw new Error('NVIDIA_NIM_API_KEY is not defined.');
+  return new OpenAI({
+    apiKey,
+    baseURL: 'https://integrate.api.nvidia.com/v1',
+  });
+};
+
+const getModelName = () => {
+  const config = getAppConfig();
+  return config.nvidiaNimModel || 'mistralai/mistral-medium-3.5-128b';
 };
 
 interface SearchFilters {
@@ -21,14 +30,15 @@ interface SearchFilters {
 }
 
 /**
- * Uses Gemini to parse user query and extract database filters.
+ * Uses Mistral to parse user query and extract database filters.
  */
 async function extractSearchFilters(
   message: string,
   history: Array<{ role: 'user' | 'model'; text: string }>
 ): Promise<SearchFilters> {
   try {
-    const ai = getGeminiClient();
+    const client = getNvidiaClient();
+    const model = getModelName();
     const today = new Date('2026-06-17T23:50:00.000Z'); // Hardcode baseline date match user metadata
 
     const systemPrompt = `You are a search query parser for an email database.
@@ -54,19 +64,18 @@ ${chatContext}
 Latest User Query: "${message}"
 JSON Response:`;
 
-    const response = await geminiRetry(() =>
-      ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [
-          { role: 'user', parts: [{ text: systemPrompt + '\n\n' + prompt }] }
+    const response = await nimRetry(() =>
+      client.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt }
         ],
-        config: {
-          temperature: 0.1,
-        }
+        temperature: 0.1,
       })
     );
 
-    const rawJson = response.text?.trim() || '{}';
+    const rawJson = response.choices[0]?.message?.content?.trim() || '{}';
     const cleanedJson = rawJson
       .replace(/^```json/i, '')
       .replace(/^```/m, '')
@@ -115,7 +124,7 @@ export async function POST(request: Request) {
     // 2. RAG Route A: Vector Search (if semantic query present)
     if (filters.semanticQuery) {
       try {
-        const queryEmbedding = await generateEmbedding(filters.semanticQuery);
+        const queryEmbedding = await generateEmbedding(filters.semanticQuery, 'query');
 
         const { data: vectorResults, error: rpcError } = await supabaseAdmin.rpc(
           'match_email_embeddings',

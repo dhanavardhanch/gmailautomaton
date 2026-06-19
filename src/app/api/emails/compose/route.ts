@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { generateDraft } from '@/lib/gemini';
+import { generateDraft } from '@/lib/mistral';
 import { getOAuthClient, refreshAccessToken, sendGmailEmail } from '@/lib/gmail';
 
 export async function POST(request: Request) {
