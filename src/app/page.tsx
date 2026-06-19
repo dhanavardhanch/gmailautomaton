@@ -36,6 +36,8 @@ export default function OnboardingPage() {
     nvidiaNimModel: 'meta/llama-3.1-70b-instruct',
   });
 
+  const [userId, setUserId] = useState<string>('');
+
   // Check config status on mount
   useEffect(() => {
     fetchConfig();
@@ -46,6 +48,14 @@ export default function OnboardingPage() {
     if (errParam) {
       setError(decodeURIComponent(errParam));
     }
+
+    // Initialize or retrieve user ID
+    let storedId = localStorage.getItem('aether_user_id');
+    if (!storedId) {
+      storedId = crypto.randomUUID();
+      localStorage.setItem('aether_user_id', storedId);
+    }
+    setUserId(storedId);
   }, []);
 
   const fetchConfig = async () => {
@@ -108,7 +118,8 @@ export default function OnboardingPage() {
     setError(null);
 
     try {
-      const res = await fetch(`/api/oauth/url?userId=${DEFAULT_USER_ID}`);
+      const activeUserId = userId || localStorage.getItem('aether_user_id') || DEFAULT_USER_ID;
+      const res = await fetch(`/api/oauth/url?userId=${activeUserId}`);
       const data = await res.json();
 
       if (!res.ok || !data.url) {

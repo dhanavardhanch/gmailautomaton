@@ -74,15 +74,40 @@ export async function syncUserInbox(userId: string, maxThreads = 10): Promise<{ 
 
     authClient.setCredentials({ access_token: accessToken });
 
-    // 3. Fetch thread list filtered by connection date (no historical emails)
-    const connectedAt = new Date(creds.created_at);
-    const afterDate = `${connectedAt.getFullYear()}/${String(connectedAt.getMonth() + 1).padStart(2, '0')}/${String(connectedAt.getDate()).padStart(2, '0')}`;
-    const qStr = `label:INBOX after:${afterDate}`;
-    console.log(`Fetching up to ${maxThreads} threads after ${afterDate}...`);
+    // 3. Fetch thread list
+    const qStr = `label:INBOX`;
+    console.log(`Checking first page of up to ${maxThreads} threads...`);
+    let threadsResponse = await listGmailThreads(authClient, { maxResults: maxThreads, q: qStr });
+    let threadsList = threadsResponse.threads || [];
+    let nextPageToken = threadsResponse.nextPageToken;
 
-    const threadsResponse = await listGmailThreads(authClient, { maxResults: maxThreads, q: qStr });
-    const threadsList = threadsResponse.threads || [];
-    console.log(`Retrieved ${threadsList.length} threads from Gmail.`);
+    // Check if any thread in the first page is new
+    const firstPageThreadIds = threadsList.map(t => t.id).filter(Boolean) as string[];
+    let hasNewEmailsInFirstPage = false;
+    if (firstPageThreadIds.length > 0) {
+      const { data: existingThreads } = await supabaseAdmin
+        .from('email_threads')
+        .select('id')
+        .in('id', firstPageThreadIds);
+      const existingThreadIds = new Set(existingThreads?.map((t: any) => t.id) || []);
+      hasNewEmailsInFirstPage = firstPageThreadIds.some(id => !existingThreadIds.has(id));
+    }
+
+    // If no new emails are found on the first page, and we have a stored pageToken,
+    // page back to get older threads
+    if (!hasNewEmailsInFirstPage && creds.last_history_id) {
+      console.log(`No new emails in first page. Paging back to older emails using token: ${creds.last_history_id}`);
+      threadsResponse = await listGmailThreads(authClient, { 
+        maxResults: maxThreads, 
+        q: qStr,
+        pageToken: creds.last_history_id
+      });
+      threadsList = threadsResponse.threads || [];
+      nextPageToken = threadsResponse.nextPageToken;
+      console.log(`Retrieved ${threadsList.length} older threads.`);
+    } else {
+      console.log(`Syncing newest threads. New threads found or no stored page token.`);
+    }
 
     // ─── PHASE 1: Save raw emails immediately (no AI) so they appear in UI fast ───
     const newMessageIdsForAI: Array<{
@@ -207,94 +232,99 @@ export async function syncUserInbox(userId: string, maxThreads = 10): Promise<{ 
       }
     }
 
-    console.log(`Phase 1 complete: ${newMessageIdsForAI.length} emails saved. Starting AI enrichment...`);
-
-    // ─── PHASE 2: AI enrichment — summaries, categories, embeddings ───
-    // Group messages by thread for thread summary generation
-    const threadMessageMap: Record<string, typeof newMessageIdsForAI> = {};
-    for (const item of newMessageIdsForAI) {
-      if (!threadMessageMap[item.threadId]) threadMessageMap[item.threadId] = [];
-      threadMessageMap[item.threadId].push(item);
-    }
-
-    let syncedThreadsCount = 0;
-
-    for (const item of newMessageIdsForAI) {
-      try {
-        // Run AI summary + categorization in parallel
-        const [emailSummary, category] = await Promise.all([
-          generateEmailSummary(item.subject, item.fromHeader, item.bodyText),
-          categorizeEmail(item.subject, item.fromHeader, item.bodyText),
-        ]);
-
-        // Update email record with AI results
-        await supabaseAdmin
-          .from('emails')
-          .update({ summary: emailSummary, category })
-          .eq('id', item.messageId);
-
-        // Generate + store vector embeddings
-        const chunks = chunkText(item.bodyText, 2500, 300);
-        await Promise.all(chunks.map(async (chunk) => {
-          try {
-            const embeddingVector = await generateEmbedding(chunk);
-            await supabaseAdmin.from('email_embeddings').insert({
-              email_id: item.messageId,
-              thread_id: item.threadId,
-              user_id: userId,
-              chunk_text: chunk,
-              embedding: embeddingVector,
-            });
-          } catch (embedErr) {
-            console.error(`Phase 2: Embedding error for ${item.messageId}:`, embedErr);
-          }
-        }));
-      } catch (aiErr) {
-        console.error(`Phase 2: AI enrichment error for ${item.messageId}:`, aiErr);
-      }
-    }
-
-    // Generate thread-level summaries
-    for (const [threadId, messages] of Object.entries(threadMessageMap)) {
-      try {
-        const { data: allEmails } = await supabaseAdmin
-          .from('emails')
-          .select('from_name, from_email, subject, body, received_at')
-          .eq('thread_id', threadId)
-          .order('received_at', { ascending: true });
-
-        const threadMsgs = (allEmails || []).map((e: any) => ({
-          from: e.from_name ? `${e.from_name} <${e.from_email}>` : e.from_email,
-          subject: e.subject || '',
-          body: e.body || '',
-          date: e.received_at ? new Date(e.received_at).toLocaleString() : '',
-        }));
-
-        const threadSummary = await generateThreadSummary(threadMsgs);
-        await supabaseAdmin
-          .from('email_threads')
-          .update({ summary: threadSummary, updated_at: new Date().toISOString() })
-          .eq('id', threadId);
-
-        syncedThreadsCount++;
-      } catch (tsErr) {
-        console.error(`Phase 2: Thread summary error for ${threadId}:`, tsErr);
-      }
-    }
-
-    // Mark sync complete
+    console.log(`Phase 1 complete: ${newMessageIdsForAI.length} emails saved. Updating sync_status to completed.`);
+    
+    // Mark sync complete for UI immediately after Phase 1 raw email fetch
     await supabaseAdmin
       .from('gmail_credentials')
       .update({
         sync_status: 'completed',
         last_synced_at: new Date().toISOString(),
-        last_history_id: threadsList[0]?.historyId || creds.last_history_id,
+        last_history_id: nextPageToken || null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', userId);
 
-    console.log(`Sync completed. ${syncedThreadsCount} threads AI-enriched.`);
-    return { success: true, count: syncedThreadsCount };
+    // ─── PHASE 2: AI enrichment — summaries, categories, embeddings (non-blocking) ───
+    // Run asynchronously to return success to the caller immediately
+    (async () => {
+      try {
+        console.log(`Starting background Phase 2 AI enrichment for user ${userId}...`);
+        
+        // Group messages by thread for thread summary generation
+        const threadMessageMap: Record<string, typeof newMessageIdsForAI> = {};
+        for (const item of newMessageIdsForAI) {
+          if (!threadMessageMap[item.threadId]) threadMessageMap[item.threadId] = [];
+          threadMessageMap[item.threadId].push(item);
+        }
+
+        for (const item of newMessageIdsForAI) {
+          try {
+            // Run AI summary + categorization in parallel
+            const [emailSummary, category] = await Promise.all([
+              generateEmailSummary(item.subject, item.fromHeader, item.bodyText),
+              categorizeEmail(item.subject, item.fromHeader, item.bodyText),
+            ]);
+
+            // Update email record with AI results
+            await supabaseAdmin
+              .from('emails')
+              .update({ summary: emailSummary, category })
+              .eq('id', item.messageId);
+
+            // Generate + store vector embeddings
+            const chunks = chunkText(item.bodyText, 2500, 300);
+            await Promise.all(chunks.map(async (chunk) => {
+              try {
+                const embeddingVector = await generateEmbedding(chunk);
+                await supabaseAdmin.from('email_embeddings').insert({
+                  email_id: item.messageId,
+                  thread_id: item.threadId,
+                  user_id: userId,
+                  chunk_text: chunk,
+                  embedding: embeddingVector,
+                });
+              } catch (embedErr) {
+                console.error(`Phase 2: Embedding error for ${item.messageId}:`, embedErr);
+              }
+            }));
+          } catch (aiErr) {
+            console.error(`Phase 2: AI enrichment error for ${item.messageId}:`, aiErr);
+          }
+        }
+
+        // Generate thread-level summaries
+        for (const [threadId, messages] of Object.entries(threadMessageMap)) {
+          try {
+            const { data: allEmails } = await supabaseAdmin
+              .from('emails')
+              .select('from_name, from_email, subject, body, received_at')
+              .eq('thread_id', threadId)
+              .order('received_at', { ascending: true });
+
+            const threadMsgs = (allEmails || []).map((e: any) => ({
+              from: e.from_name ? `${e.from_name} <${e.from_email}>` : e.from_email,
+              subject: e.subject || '',
+              body: e.body || '',
+              date: e.received_at ? new Date(e.received_at).toLocaleString() : '',
+            }));
+
+            const threadSummary = await generateThreadSummary(threadMsgs);
+            await supabaseAdmin
+              .from('email_threads')
+              .update({ summary: threadSummary, updated_at: new Date().toISOString() })
+              .eq('id', threadId);
+          } catch (tsErr) {
+            console.error(`Phase 2: Thread summary error for ${threadId}:`, tsErr);
+          }
+        }
+        console.log(`Background Phase 2 AI enrichment complete for user ${userId}.`);
+      } catch (backgroundError) {
+        console.error('Background AI enrichment crashed:', backgroundError);
+      }
+    })();
+
+    return { success: true, count: newMessageIdsForAI.length };
 
   } catch (error: any) {
     console.error('Error in syncUserInbox:', error);
@@ -309,4 +339,3 @@ export async function syncUserInbox(userId: string, maxThreads = 10): Promise<{ 
     return { success: false, count: 0, error: error.message || String(error) };
   }
 }
-

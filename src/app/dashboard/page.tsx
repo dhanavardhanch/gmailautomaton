@@ -44,6 +44,12 @@ interface NewsStory {
 }
 
 export default function DashboardPage() {
+  const [userId, setUserId] = useState<string>('');
+
+  const getActiveUserId = () => {
+    return userId || (typeof window !== 'undefined' ? localStorage.getItem('aether_user_id') : '') || DEFAULT_USER_ID;
+  };
+
   // Inbox data state
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [activeCategory, setActiveCategory] = useState('All');
@@ -86,6 +92,16 @@ export default function DashboardPage() {
 
   // Fetch threads and connection status on mount
   useEffect(() => {
+    let storedId = localStorage.getItem('aether_user_id');
+    if (!storedId) {
+      storedId = DEFAULT_USER_ID;
+      localStorage.setItem('aether_user_id', storedId);
+    }
+    setUserId(storedId);
+  }, []);
+
+  useEffect(() => {
+    if (!userId) return;
     fetchThreads();
     
     // Check if redirect has "sync=trigger" query parameter
@@ -95,7 +111,7 @@ export default function DashboardPage() {
       // Clean up URL query parameters
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }, [activeCategory]);
+  }, [userId, activeCategory]);
 
   // Poll threads and sync status when syncing is active in the background
   useEffect(() => {
@@ -141,7 +157,8 @@ export default function DashboardPage() {
 
   const fetchThreads = async () => {
     try {
-      const res = await fetch(`/api/threads?userId=${DEFAULT_USER_ID}&category=${activeCategory}`);
+      const activeUserId = getActiveUserId();
+      const res = await fetch(`/api/threads?userId=${activeUserId}&category=${activeCategory}`);
       const data = await res.json();
       if (data.threads) {
         setThreads(data.threads);
@@ -160,7 +177,8 @@ export default function DashboardPage() {
       setReplyDraft('');
       setReplyPrompt('');
       setShowRetune(false);
-      const res = await fetch(`/api/threads?userId=${DEFAULT_USER_ID}&threadId=${threadId}`);
+      const activeUserId = getActiveUserId();
+      const res = await fetch(`/api/threads?userId=${activeUserId}&threadId=${threadId}`);
       const data = await res.json();
       if (data.emails) {
         setEmailsInThread(data.emails);
@@ -191,7 +209,7 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'draft',
-          userId: DEFAULT_USER_ID,
+          userId: getActiveUserId(),
           prompt,
           threadId,
         }),
@@ -216,10 +234,11 @@ export default function DashboardPage() {
     setStatusMessage('Disconnecting account and purging email data...');
     setErrorMessage(null);
     try {
+      const activeUserId = getActiveUserId();
       const res = await fetch('/api/oauth/logout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: DEFAULT_USER_ID }),
+        body: JSON.stringify({ userId: activeUserId }),
       });
       
       const data = await res.json();
@@ -233,6 +252,7 @@ export default function DashboardPage() {
       setSelectedThreadId(null);
       setSelectedThread(null);
       setConnection(null);
+      localStorage.removeItem('aether_user_id');
       
       setStatusMessage('Purge complete. Redirecting...');
       setTimeout(() => {
@@ -254,7 +274,7 @@ export default function DashboardPage() {
       const res = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: DEFAULT_USER_ID, maxThreads: 10 }),
+        body: JSON.stringify({ userId: getActiveUserId(), maxThreads: 10 }),
       });
       const data = await res.json();
       
@@ -284,7 +304,7 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'draft',
-          userId: DEFAULT_USER_ID,
+          userId: getActiveUserId(),
           prompt,
           threadId: selectedThreadId,
         }),
@@ -315,7 +335,7 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'send',
-          userId: DEFAULT_USER_ID,
+          userId: getActiveUserId(),
           to: latestEmail.from_email,
           subject: selectedThread?.subject || latestEmail.subject,
           body: replyDraft,
@@ -354,7 +374,7 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'draft',
-          userId: DEFAULT_USER_ID,
+          userId: getActiveUserId(),
           prompt: newEmailForm.prompt,
         }),
       });
@@ -381,7 +401,7 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'send',
-          userId: DEFAULT_USER_ID,
+          userId: getActiveUserId(),
           to: newEmailForm.to,
           subject: newEmailForm.subject,
           body: newEmailForm.draft,
@@ -411,7 +431,7 @@ export default function DashboardPage() {
     setErrorMessage(null);
 
     try {
-      const res = await fetch(`/api/news/dedup?userId=${DEFAULT_USER_ID}`);
+      const res = await fetch(`/api/news/dedup?userId=${getActiveUserId()}`);
       const data = await res.json();
       if (data.feed) {
         setNewsFeed(data.feed);
@@ -445,7 +465,7 @@ export default function DashboardPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: DEFAULT_USER_ID,
+          userId: getActiveUserId(),
           message: userMsg,
           chatHistory: historyPayload,
         }),
